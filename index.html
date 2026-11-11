@@ -56,6 +56,7 @@
         button:active { background: #0039cb; }
         button.secondary { background: #444; }
         button.danger { background: #b71c1c; }
+        button.success { background: #1b5e20; }
         button.small {
             padding: 7px 12px;
             font-size: 0.85em;
@@ -63,7 +64,6 @@
         }
         .hint { color: #888; font-size: 0.85em; margin-top: 12px; }
 
-        /* --- Historial --- */
         #history-section {
             max-width: 640px;
             margin: 0 auto;
@@ -104,6 +104,8 @@
             margin: 0;
         }
         .empty { color: #666; font-size: 0.9em; padding: 10px 0; }
+        #export-buttons { text-align: center; margin-top: 10px; }
+
         #toast {
             position: fixed;
             bottom: 24px;
@@ -118,6 +120,7 @@
             transition: all .25s ease;
             pointer-events: none;
             z-index: 999;
+            max-width: 90vw;
         }
         #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     </style>
@@ -136,9 +139,13 @@
         <h2>📋 Escaneos guardados (<span id="count">0</span>)</h2>
         <ul id="history-list"></ul>
         <p id="empty-msg" class="empty">Aún no has escaneado nada.</p>
-        <div style="text-align:center; margin-top:10px;">
-            <button id="copyAllBtn" class="secondary" style="display:none">📄 Copiar todos</button>
-            <button id="clearBtn" class="danger" style="display:none">🗑️ Vaciar historial</button>
+
+        <div id="export-buttons" style="display:none">
+            <button id="exportCsvBtn" class="success">📤 Exportar CSV</button>
+            <button id="copyTsvBtn" class="secondary">📋 Copiar para Excel/Sheets</button>
+            <br>
+            <button id="copyAllBtn" class="secondary">🔢 Copiar solo números</button>
+            <button id="clearBtn" class="danger">🗑️ Vaciar historial</button>
         </div>
     </div>
 
@@ -148,26 +155,26 @@
     <script>
         const STORAGE_KEY = 'mis_escaneos_v1';
 
-        const resultEl    = document.getElementById('result');
-        const startBtn    = document.getElementById('startBtn');
-        const stopBtn     = document.getElementById('stopBtn');
-        const container   = document.getElementById('scanner-container');
-        const listEl      = document.getElementById('history-list');
-        const countEl     = document.getElementById('count');
-        const emptyMsg    = document.getElementById('empty-msg');
-        const clearBtn    = document.getElementById('clearBtn');
-        const copyAllBtn  = document.getElementById('copyAllBtn');
-        const toastEl     = document.getElementById('toast');
+        const resultEl   = document.getElementById('result');
+        const startBtn   = document.getElementById('startBtn');
+        const stopBtn    = document.getElementById('stopBtn');
+        const container  = document.getElementById('scanner-container');
+        const listEl     = document.getElementById('history-list');
+        const countEl    = document.getElementById('count');
+        const emptyMsg   = document.getElementById('empty-msg');
+        const clearBtn   = document.getElementById('clearBtn');
+        const copyAllBtn = document.getElementById('copyAllBtn');
+        const exportCsvBtn = document.getElementById('exportCsvBtn');
+        const copyTsvBtn = document.getElementById('copyTsvBtn');
+        const exportBtns = document.getElementById('export-buttons');
+        const toastEl    = document.getElementById('toast');
 
         let running = false;
 
-        /* ---------- HISTORIAL (localStorage) ---------- */
+        /* ---------- HISTORIAL ---------- */
         function loadHistory() {
-            try {
-                return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-            } catch (e) {
-                return [];
-            }
+            try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+            catch (e) { return []; }
         }
         function saveHistory(list) {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
@@ -182,18 +189,15 @@
                 format: format,
                 date: new Date().toISOString()
             });
-            // Límite opcional para no llenar el almacenamiento (últimos 200)
             if (history.length > 200) history = history.slice(0, 200);
             saveHistory(history);
             renderHistory();
         }
-
         function deleteScan(id) {
             history = history.filter(x => x.id !== id);
             saveHistory(history);
             renderHistory();
         }
-
         function clearAll() {
             if (!confirm('¿Seguro que quieres borrar todo el historial?')) return;
             history = [];
@@ -206,7 +210,7 @@
             const d = new Date(iso);
             return d.toLocaleString('es-ES', {
                 day: '2-digit', month: '2-digit', year: 'numeric',
-                hour: '2-digit', minute: '2-digit'
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
             });
         }
 
@@ -214,8 +218,7 @@
             listEl.innerHTML = '';
             countEl.textContent = history.length;
             emptyMsg.style.display = history.length ? 'none' : 'block';
-            clearBtn.style.display = history.length ? 'inline-block' : 'none';
-            copyAllBtn.style.display = history.length ? 'inline-block' : 'none';
+            exportBtns.style.display = history.length ? 'block' : 'none';
 
             history.forEach(item => {
                 const li = document.createElement('li');
@@ -259,6 +262,78 @@
             });
         }
 
+        /* ---------- EXPORTACIÓN ---------- */
+        // CSV con escape correcto (comillas dobles dentro del campo)
+        function escapeCsv(value) {
+            const s = String(value);
+            if (/[",\n\r;]/.test(s)) {
+                return '"' + s.replace(/"/g, '""') + '"';
+            }
+            return s;
+        }
+
+        function buildCsv() {
+            const rows = [['Código', 'Formato', 'Fecha']];
+            history.forEach(item => {
+                rows.push([item.code, item.format, formatDate(item.date)]);
+            });
+            // BOM UTF-8 al principio para que Excel abra bien los acentos
+            return '\uFEFF' + rows.map(r => r.map(escapeCsv).join(',')).join('\r\n');
+        }
+
+        function exportCsv() {
+            if (!history.length) return;
+            const csv = buildCsv();
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const now = new Date();
+            const stamp = now.getFullYear() +
+                String(now.getMonth() + 1).padStart(2, '0') +
+                String(now.getDate()).padStart(2, '0') + '_' +
+                String(now.getHours()).padStart(2, '0') +
+                String(now.getMinutes()).padStart(2, '0');
+            const filename = 'escaneos_' + stamp + '.csv';
+
+            // Intentar descarga con File System Access API (Chrome Android)
+            if (window.showSaveFilePicker) {
+                window.showSaveFilePicker({
+                    suggestedName: filename,
+                    types: [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }]
+                }).then(async handle => {
+                    const writable = await handle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                    showToast('CSV guardado');
+                }).catch(err => {
+                    if (err.name !== 'AbortError') fallbackDownload(blob, filename);
+                });
+            } else {
+                fallbackDownload(blob, filename);
+            }
+        }
+
+        function fallbackDownload(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.rel = 'noopener';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 4000);
+            showToast('Descargando ' + filename);
+        }
+
+        // TSV: pega directo en Excel/Sheets con columnas separadas
+        function copyForSpreadsheet() {
+            if (!history.length) return;
+            const rows = [['Código', 'Formato', 'Fecha'].join('\t')];
+            history.forEach(item => {
+                rows.push([item.code, item.format, formatDate(item.date)].join('\t'));
+            });
+            copyText(rows.join('\n'), 'Datos copiados. Pega en Excel/Sheets.');
+        }
+
         /* ---------- PORTAPAPELES + TOAST ---------- */
         function copyText(text, msg) {
             const ok = () => showToast(msg || 'Copiado');
@@ -285,7 +360,7 @@
             toastEl.textContent = msg;
             toastEl.classList.add('show');
             clearTimeout(toastTimer);
-            toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
+            toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
         }
 
         /* ---------- ESCÁNER ---------- */
@@ -293,7 +368,6 @@
             if (!running) return;
             if (!result || !result.codeResult || !result.codeResult.code) return;
 
-            // Filtro anti-falsos positivos
             if (result.codeResult.decodedCodes) {
                 const errs = result.codeResult.decodedCodes.filter(x => x.error !== undefined);
                 const avg  = errs.reduce((s, x) => s + x.error, 0) / (errs.length || 1);
@@ -310,7 +384,7 @@
             if (navigator.vibrate) navigator.vibrate(200);
             showToast('Guardado: ' + code);
 
-            stopScanner(); // se detiene para no repetir el mismo código
+            stopScanner();
         });
 
         function startScanner() {
@@ -366,10 +440,12 @@
         startBtn.addEventListener('click', startScanner);
         stopBtn.addEventListener('click', stopScanner);
         clearBtn.addEventListener('click', clearAll);
+        exportCsvBtn.addEventListener('click', exportCsv);
+        copyTsvBtn.addEventListener('click', copyForSpreadsheet);
         copyAllBtn.addEventListener('click', () => {
             if (!history.length) return;
-            const text = history.map(x => x.code).join('\n');
-            copyText(text, 'Copiados ' + history.length + ' códigos');
+            copyText(history.map(x => x.code).join('\n'),
+                     'Copiados ' + history.length + ' códigos');
         });
 
         renderHistory();
