@@ -273,7 +273,7 @@
         }
 
         function buildCsv() {
-            const rows = [['Código', 'Formato', 'Fecha']];
+            const rows = [['Codigo', 'Formato', 'Fecha']];
             history.forEach(item => {
                 rows.push([item.code, item.format, formatDate(item.date)]);
             });
