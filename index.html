@@ -55,6 +55,7 @@
         }
         button:active { background: #0039cb; }
         button.secondary { background: #444; }
+        button.success { background: #2e7d32; }
         button.danger { background: #b71c1c; }
         button.small {
             padding: 7px 12px;
@@ -138,8 +139,10 @@
         <h2>📋 Escaneos guardados (<span id="count">0</span>)</h2>
         <ul id="history-list"></ul>
         <p id="empty-msg" class="empty">Aún no has escaneado nada.</p>
-        <div style="text-align:center; margin-top:10px;">
-            <button id="exportBtn" class="secondary" style="display:none">📥 Exportar a CSV</button>
+        
+        <div style="text-align:center; margin-top:10px; display:flex; flex-wrap:wrap; justify-content:center; gap:8px;">
+            <button id="copyTableBtn" class="success" style="display:none">📋 Copiar para Sheets</button>
+            <button id="exportBtn" class="secondary" style="display:none">📥 Descargar CSV</button>
             <button id="clearBtn" class="danger" style="display:none">🗑️ Vaciar historial</button>
         </div>
     </div>
@@ -159,6 +162,7 @@
         const emptyMsg    = document.getElementById('empty-msg');
         const clearBtn    = document.getElementById('clearBtn');
         const exportBtn   = document.getElementById('exportBtn');
+        const copyTableBtn= document.getElementById('copyTableBtn');
         const toastEl     = document.getElementById('toast');
 
         let running = false;
@@ -217,6 +221,7 @@
             emptyMsg.style.display = history.length ? 'none' : 'block';
             clearBtn.style.display = history.length ? 'inline-block' : 'none';
             exportBtn.style.display = history.length ? 'inline-block' : 'none';
+            copyTableBtn.style.display = history.length ? 'inline-block' : 'none';
 
             history.forEach(item => {
                 const li = document.createElement('li');
@@ -260,22 +265,30 @@
             });
         }
 
-        /* ---------- EXPORTAR A CSV ---------- */
+        /* ---------- COPIAR PARA PEGAR EN SHEETS (Tabulado) ---------- */
+        function copyTableForSheets() {
+            if (!history.length) return;
+
+            let text = 'Codigo\tFormato\tFecha\n';
+            history.forEach(item => {
+                text += `${item.code}\t${item.format}\t${formatDate(item.date)}\n`;
+            });
+
+            copyText(text, '¡Copiado! Ahora pega en Sheets');
+        }
+
+        /* ---------- EXPORTAR A CSV (Sin tildes en cabecera) ---------- */
         function exportToCSV() {
             if (!history.length) return;
 
-            // 1. El BOM (\uFEFF) es crucial para que Excel lea el UTF-8 correctamente (evita el "CÃ³digo")
-            let csvContent = '\uFEFF';
-            
-            // 2. Cabeceras
-            csvContent += 'Código,Formato,Fecha\n';
+            let csvContent = ''; 
+            // Cabecera sin tildes para evitar fallos de codificación en Android
+            csvContent += 'Codigo,Formato,Fecha\n';
 
-            // 3. Filas. Usamos comillas dobles para evitar que Excel rompa los números largos
             history.forEach(item => {
                 csvContent += `"${item.code}","${item.format}","${formatDate(item.date)}"\n`;
             });
 
-            // 4. Crear archivo y forzar descarga
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
@@ -287,7 +300,7 @@
             link.click();
             document.body.removeChild(link);
             
-            showToast('Archivo CSV descargado');
+            showToast('Archivo descargado');
         }
 
         /* ---------- PORTAPAPELES + TOAST ---------- */
@@ -324,7 +337,6 @@
             if (!running) return;
             if (!result || !result.codeResult || !result.codeResult.code) return;
 
-            // Filtro anti-falsos positivos
             if (result.codeResult.decodedCodes) {
                 const errs = result.codeResult.decodedCodes.filter(x => x.error !== undefined);
                 const avg  = errs.reduce((s, x) => s + x.error, 0) / (errs.length || 1);
@@ -398,6 +410,7 @@
         stopBtn.addEventListener('click', stopScanner);
         clearBtn.addEventListener('click', clearAll);
         exportBtn.addEventListener('click', exportToCSV);
+        copyTableBtn.addEventListener('click', copyTableForSheets);
 
         renderHistory();
     </script>
