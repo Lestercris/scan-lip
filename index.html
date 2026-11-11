@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mi Escáner Personal</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            text-align: center;
+            padding: 16px;
+            margin: 0;
+            background: #111;
+            color: #eee;
+        }
+        h1 { font-size: 1.4em; margin: 8px 0 16px; }
+        h2 { font-size: 1.1em; margin: 24px 0 10px; color: #bbb; }
+        #scanner-container {
+            width: 100%;
+            max-width: 640px;
+            margin: 0 auto;
+            position: relative;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            min-height: 220px;
+        }
+        #scanner-container video,
+        #scanner-container canvas {
+            width: 100% !important;
+            height: auto !important;
+            display: block;
+        }
+        #result {
+            margin: 16px auto;
+            padding: 16px;
+            background: #222;
+            border-radius: 12px;
+            font-size: 1.25em;
+            max-width: 640px;
+            min-height: 1.3em;
+            word-break: break-all;
+        }
+        #result.ok { background: #1b5e20; }
+        button {
+            font-size: 1em;
+            padding: 11px 20px;
+            border: none;
+            border-radius: 10px;
+            background: #2962ff;
+            color: white;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:active { background: #0039cb; }
+        button.secondary { background: #444; }
+        button.danger { background: #b71c1c; }
+        button.small {
+            padding: 7px 12px;
+            font-size: 0.85em;
+            margin: 0 0 0 6px;
+        }
+        .hint { color: #888; font-size: 0.85em; margin-top: 12px; }
+
+        /* --- Historial --- */
+        #history-section {
+            max-width: 640px;
+            margin: 0 auto;
+            text-align: left;
+        }
+        #history-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .entry {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            background: #1e1e1e;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 8px;
+        }
+        .entry .info { flex: 1; min-width: 0; }
+        .entry .code {
+            font-size: 1.15em;
+            font-weight: 600;
+            color: #fff;
+            word-break: break-all;
+            user-select: all;
+        }
+        .entry .meta {
+            font-size: 0.78em;
+            color: #888;
+            margin-top: 3px;
+        }
+        .entry .actions { display: flex; gap: 6px; flex-shrink: 0; }
+        .entry .actions button {
+            padding: 8px 10px;
+            font-size: 1em;
+            margin: 0;
+        }
+        .empty { color: #666; font-size: 0.9em; padding: 10px 0; }
+        #toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: #2962ff;
+            color: #fff;
+            padding: 12px 20px;
+            border-radius: 24px;
+            font-size: 0.95em;
+            opacity: 0;
+            transition: all .25s ease;
+            pointer-events: none;
+            z-index: 999;
+        }
+        #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    </style>
+</head>
+<body>
+    <h1>📷 Escáner de Códigos</h1>
+    <div id="scanner-container"></div>
+    <div id="result">Pulsa "Iniciar escáner" para activar la cámara.</div>
+    <div>
+        <button id="startBtn">▶️ Iniciar escáner</button>
+        <button id="stopBtn" class="secondary" style="display:none">⏹️ Detener</button>
+    </div>
+    <p class="hint">La primera vez el navegador pedirá permiso para la cámara. Acéptalo.</p>
+
+    <div id="history-section">
+        <h2>📋 Escaneos guardados (<span id="count">0</span>)</h2>
+        <ul id="history-list"></ul>
+        <p id="empty-msg" class="empty">Aún no has escaneado nada.</p>
+        <div style="text-align:center; margin-top:10px;">
+            <button id="copyAllBtn" class="secondary" style="display:none">📄 Copiar todos</button>
+            <button id="clearBtn" class="danger" style="display:none">🗑️ Vaciar historial</button>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2@1.8.4/dist/quagga.min.js"></script>
+    <script>
+        const STORAGE_KEY = 'mis_escaneos_v1';
+
+        const resultEl    = document.getElementById('result');
+        const startBtn    = document.getElementById('startBtn');
+        const stopBtn     = document.getElementById('stopBtn');
+        const container   = document.getElementById('scanner-container');
+        const listEl      = document.getElementById('history-list');
+        const countEl     = document.getElementById('count');
+        const emptyMsg    = document.getElementById('empty-msg');
+        const clearBtn    = document.getElementById('clearBtn');
+        const copyAllBtn  = document.getElementById('copyAllBtn');
+        const toastEl     = document.getElementById('toast');
+
+        let running = false;
+
+        /* ---------- HISTORIAL (localStorage) ---------- */
+        function loadHistory() {
+            try {
+                return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            } catch (e) {
+                return [];
+            }
+        }
+        function saveHistory(list) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+        }
+
+        let history = loadHistory();
+
+        function addScan(code, format) {
+            history.unshift({
+                id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+                code: code,
+                format: format,
+                date: new Date().toISOString()
+            });
+            // Límite opcional para no llenar el almacenamiento (últimos 200)
+            if (history.length > 200) history = history.slice(0, 200);
+            saveHistory(history);
+            renderHistory();
+        }
+
+        function deleteScan(id) {
+            history = history.filter(x => x.id !== id);
+            saveHistory(history);
+            renderHistory();
+        }
+
+        function clearAll() {
+            if (!confirm('¿Seguro que quieres borrar todo el historial?')) return;
+            history = [];
+            saveHistory(history);
+            renderHistory();
+            showToast('Historial vaciado');
+        }
+
+        function formatDate(iso) {
+            const d = new Date(iso);
+            return d.toLocaleString('es-ES', {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            });
+        }
+
+        function renderHistory() {
+            listEl.innerHTML = '';
+            countEl.textContent = history.length;
+            emptyMsg.style.display = history.length ? 'none' : 'block';
+            clearBtn.style.display = history.length ? 'inline-block' : 'none';
+            copyAllBtn.style.display = history.length ? 'inline-block' : 'none';
+
+            history.forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'entry';
+
+                const info = document.createElement('div');
+                info.className = 'info';
+
+                const codeEl = document.createElement('div');
+                codeEl.className = 'code';
+                codeEl.textContent = item.code;
+
+                const metaEl = document.createElement('div');
+                metaEl.className = 'meta';
+                metaEl.textContent = item.format + ' · ' + formatDate(item.date);
+
+                info.appendChild(codeEl);
+                info.appendChild(metaEl);
+
+                const actions = document.createElement('div');
+                actions.className = 'actions';
+
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'small secondary';
+                copyBtn.textContent = '📋';
+                copyBtn.title = 'Copiar';
+                copyBtn.addEventListener('click', () => copyText(item.code, 'Copiado: ' + item.code));
+
+                const delBtn = document.createElement('button');
+                delBtn.className = 'small danger';
+                delBtn.textContent = '✕';
+                delBtn.title = 'Borrar';
+                delBtn.addEventListener('click', () => deleteScan(item.id));
+
+                actions.appendChild(copyBtn);
+                actions.appendChild(delBtn);
+
+                li.appendChild(info);
+                li.appendChild(actions);
+                listEl.appendChild(li);
+            });
+        }
+
+        /* ---------- PORTAPAPELES + TOAST ---------- */
+        function copyText(text, msg) {
+            const ok = () => showToast(msg || 'Copiado');
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(ok).catch(() => fallbackCopy(text, ok));
+            } else {
+                fallbackCopy(text, ok);
+            }
+        }
+        function fallbackCopy(text, cb) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch (e) {}
+            document.body.removeChild(ta);
+            cb && cb();
+        }
+
+        let toastTimer;
+        function showToast(msg) {
+            toastEl.textContent = msg;
+            toastEl.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
+        }
+
+        /* ---------- ESCÁNER ---------- */
+        Quagga.onDetected(function(result) {
+            if (!running) return;
+            if (!result || !result.codeResult || !result.codeResult.code) return;
+
+            // Filtro anti-falsos positivos
+            if (result.codeResult.decodedCodes) {
+                const errs = result.codeResult.decodedCodes.filter(x => x.error !== undefined);
+                const avg  = errs.reduce((s, x) => s + x.error, 0) / (errs.length || 1);
+                if (avg > 0.15) return;
+            }
+
+            const code   = result.codeResult.code;
+            const format = result.codeResult.format;
+
+            resultEl.textContent = '✅ ' + format + ': ' + code;
+            resultEl.className = 'ok';
+
+            addScan(code, format);
+            if (navigator.vibrate) navigator.vibrate(200);
+            showToast('Guardado: ' + code);
+
+            stopScanner(); // se detiene para no repetir el mismo código
+        });
+
+        function startScanner() {
+            if (running) return;
+            resultEl.className = '';
+            resultEl.textContent = 'Activando cámara...';
+
+            Quagga.init({
+                inputStream: {
+                    type: 'LiveStream',
+                    target: container,
+                    constraints: {
+                        facingMode: 'environment',
+                        width:  { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                },
+                locator: { patchSize: 'medium', halfSample: true },
+                numOfWorkers: navigator.hardwareConcurrency || 2,
+                frequency: 10,
+                decoder: {
+                    readers: [
+                        'ean_reader', 'ean_8_reader',
+                        'upc_reader', 'upc_e_reader',
+                        'code_128_reader'
+                    ]
+                },
+                locate: true
+            }, function(err) {
+                if (err) {
+                    console.error(err);
+                    resultEl.textContent = 'Error: ' + (err.message || err);
+                    return;
+                }
+                Quagga.start();
+                running = true;
+                startBtn.style.display = 'none';
+                stopBtn.style.display  = 'inline-block';
+                resultEl.textContent = 'Apunta al código de barras...';
+            });
+        }
+
+        function stopScanner() {
+            if (!running) return;
+            Quagga.stop();
+            running = false;
+            startBtn.style.display = 'inline-block';
+            stopBtn.style.display  = 'none';
+            container.innerHTML = '';
+        }
+
+        /* ---------- EVENTOS ---------- */
+        startBtn.addEventListener('click', startScanner);
+        stopBtn.addEventListener('click', stopScanner);
+        clearBtn.addEventListener('click', clearAll);
+        copyAllBtn.addEventListener('click', () => {
+            if (!history.length) return;
+            const text = history.map(x => x.code).join('\n');
+            copyText(text, 'Copiados ' + history.length + ' códigos');
+        });
+
+        renderHistory();
+    </script>
+</body>
+</html>
