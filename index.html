@@ -285,17 +285,12 @@ async function enviarAlPuntoDeVenta(codigo) {
     try {
         showToast("Enviando: " + codigo + "...");
         
-        // Enviamos los datos como un formulario estándar
-        const formData = new URLSearchParams();
-        formData.append('codigo', codigo);
+        // Usamos GET con el código en la URL
+        const urlConCodigo = URL_BUZON + "?codigo=" + encodeURIComponent(codigo);
 
-        await fetch(URL_BUZON, {
-            method: 'POST',
-            mode: 'no-cors', // ESTO EVITA EL BLOQUEO DE BRAVE Y CHROME
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: formData
+        await fetch(urlConCodigo, {
+            method: 'GET',
+            mode: 'no-cors' // Evita bloqueos del móvil
         });
         
         showToast("✅ Enviado al Punto de Venta");
