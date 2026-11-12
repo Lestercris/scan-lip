@@ -285,21 +285,21 @@ async function enviarAlPuntoDeVenta(codigo) {
     try {
         showToast("Enviando: " + codigo + "...");
         
-        // Usamos GET con el código en la URL
+        // Usamos el truco de la imagen invisible
         const urlConCodigo = URL_BUZON + "?codigo=" + encodeURIComponent(codigo);
-
-        await fetch(urlConCodigo, {
-            method: 'GET',
-            mode: 'no-cors' // Evita bloqueos del móvil
-        });
+        const img = new Image();
+        img.src = urlConCodigo;
         
-        showToast("✅ Enviado al Punto de Venta");
+        // Damos un segundo de espera para que la petición salga
+        setTimeout(() => {
+            showToast("✅ Enviado al Punto de Venta");
+        }, 500);
+        
     } catch (error) {
         console.error("Error de red:", error);
         showToast("❌ Error: " + error.message); 
     }
 }
-
         /* ---------- COPIAR PARA PEGAR EN SHEETS (Tabulado) ---------- */
         function copyTableForSheets() {
             if (!history.length) return;
