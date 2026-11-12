@@ -284,16 +284,24 @@
 async function enviarAlPuntoDeVenta(codigo) {
     try {
         showToast("Enviando: " + codigo + "...");
+        
+        // Enviamos los datos como un formulario estándar
+        const formData = new URLSearchParams();
+        formData.append('codigo', codigo);
+
         await fetch(URL_BUZON, {
             method: 'POST',
-            // Usamos text/plain para evitar bloqueos de CORS en navegadores móviles
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ codigo: codigo })
+            mode: 'no-cors', // ESTO EVITA EL BLOQUEO DE BRAVE Y CHROME
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: formData
         });
+        
         showToast("✅ Enviado al Punto de Venta");
     } catch (error) {
-        console.error(error);
-        showToast("❌ Error al enviar");
+        console.error("Error de red:", error);
+        showToast("❌ Error: " + error.message); 
     }
 }
 
