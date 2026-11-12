@@ -280,25 +280,22 @@
         }
 
         /* ---------- ENVIAR AL PUNTO DE VENTA ---------- */
-        async function enviarAlPuntoDeVenta(codigo) {
-            if (URL_BUZON.includes("TU_ID_AQUI")) {
-                alert("Falta configurar la URL del buzón en el código.");
-                return;
-            }
-            try {
-                showToast("Enviando: " + codigo + "...");
-                await fetch(URL_BUZON, {
-                    method: 'POST',
-                    // Usamos text/plain para evitar bloqueos de CORS en navegadores móviles
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ codigo: codigo })
-                });
-                showToast("✅ Enviado al Punto de Venta");
-            } catch (error) {
-                console.error(error);
-                showToast("❌ Error al enviar");
-            }
-        }
+
+async function enviarAlPuntoDeVenta(codigo) {
+    try {
+        showToast("Enviando: " + codigo + "...");
+        await fetch(URL_BUZON, {
+            method: 'POST',
+            // Usamos text/plain para evitar bloqueos de CORS en navegadores móviles
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ codigo: codigo })
+        });
+        showToast("✅ Enviado al Punto de Venta");
+    } catch (error) {
+        console.error(error);
+        showToast("❌ Error al enviar");
+    }
+}
 
         /* ---------- COPIAR PARA PEGAR EN SHEETS (Tabulado) ---------- */
         function copyTableForSheets() {
