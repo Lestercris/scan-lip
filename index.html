@@ -57,6 +57,7 @@
         button.secondary { background: #444; }
         button.success { background: #2e7d32; }
         button.danger { background: #b71c1c; }
+        button.send { background: #f57c00; }
         button.small {
             padding: 7px 12px;
             font-size: 0.85em;
@@ -98,7 +99,7 @@
             color: #888;
             margin-top: 3px;
         }
-        .entry .actions { display: flex; gap: 6px; flex-shrink: 0; }
+        .entry .actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap;}
         .entry .actions button {
             padding: 8px 10px;
             font-size: 1em;
@@ -152,6 +153,11 @@
     <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2@1.8.4/dist/quagga.min.js"></script>
     <script>
         const STORAGE_KEY = 'mis_escaneos_v1';
+        
+        /* ========================================================= */
+        /* ⚠️ PEGA AQUÍ LA URL DE TU APLICACIÓN WEB DE APPS SCRIPT ⚠️ */
+        const URL_BUZON = "https://script.google.com/macros/s/TU_ID_AQUI/exec";
+        /* ========================================================= */
 
         const resultEl    = document.getElementById('result');
         const startBtn    = document.getElementById('startBtn');
@@ -244,6 +250,13 @@
                 const actions = document.createElement('div');
                 actions.className = 'actions';
 
+                // Botón Enviar al Punto de Venta
+                const sendBtn = document.createElement('button');
+                sendBtn.className = 'small send';
+                sendBtn.textContent = '📤';
+                sendBtn.title = 'Enviar al Punto de Venta';
+                sendBtn.addEventListener('click', () => enviarAlPuntoDeVenta(item.code));
+
                 const copyBtn = document.createElement('button');
                 copyBtn.className = 'small secondary';
                 copyBtn.textContent = '📋';
@@ -256,6 +269,7 @@
                 delBtn.title = 'Borrar';
                 delBtn.addEventListener('click', () => deleteScan(item.id));
 
+                actions.appendChild(sendBtn);
                 actions.appendChild(copyBtn);
                 actions.appendChild(delBtn);
 
@@ -263,6 +277,27 @@
                 li.appendChild(actions);
                 listEl.appendChild(li);
             });
+        }
+
+        /* ---------- ENVIAR AL PUNTO DE VENTA ---------- */
+        async function enviarAlPuntoDeVenta(codigo) {
+            if (URL_BUZON.includes("TU_ID_AQUI")) {
+                alert("Falta configurar la URL del buzón en el código.");
+                return;
+            }
+            try {
+                showToast("Enviando: " + codigo + "...");
+                await fetch(URL_BUZON, {
+                    method: 'POST',
+                    // Usamos text/plain para evitar bloqueos de CORS en navegadores móviles
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ codigo: codigo })
+                });
+                showToast("✅ Enviado al Punto de Venta");
+            } catch (error) {
+                console.error(error);
+                showToast("❌ Error al enviar");
+            }
         }
 
         /* ---------- COPIAR PARA PEGAR EN SHEETS (Tabulado) ---------- */
@@ -277,12 +312,11 @@
             copyText(text, '¡Copiado! Ahora pega en Sheets');
         }
 
-        /* ---------- EXPORTAR A CSV (Sin tildes en cabecera) ---------- */
+        /* ---------- EXPORTAR A CSV ---------- */
         function exportToCSV() {
             if (!history.length) return;
 
             let csvContent = ''; 
-            // Cabecera sin tildes para evitar fallos de codificación en Android
             csvContent += 'Codigo,Formato,Fecha\n';
 
             history.forEach(item => {
